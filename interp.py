@@ -222,7 +222,7 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
             sv = evalInEnv(env, s)
             if not (isInt(sv)):
                 raise EvalError("negation on non-integer")
-            return -(evalInEnv(env, s))
+            return -sv
         case Eq(l, r):
             lv = evalInEnv(env, l)
             rv = evalInEnv(env, r)
