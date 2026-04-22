@@ -1,6 +1,32 @@
 from dataclasses import dataclass
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not
+
+
+@dataclass
+class Or:
+    left: Expr
+    right: Expr
+
+    def __str__(self) -> str:
+        return f"({self.left} or {self.right})"
+
+
+@dataclass
+class And:
+    left: Expr
+    right: Expr
+
+    def __str__(self) -> str:
+        return f"({self.left} and {self.right})"
+
+
+@dataclass
+class Not:
+    subexpr: Expr
+
+    def __str__(self) -> str:
+        return f"(not {self.subexpr})"
 
 
 @dataclass
@@ -49,7 +75,7 @@ class Neg:
 
 @dataclass
 class Lit:
-    value: int
+    value: int | bool
 
     def __str__(self) -> str:
         return f"{self.value}"
@@ -108,15 +134,47 @@ def eval(e: Expr) -> int:
     return evalInEnv(emptyEnv, e)
 
 
+def isInt(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)  # bool is subtype of int
+
+
+def isBool(v) -> bool:
+    return isinstance(v, bool)
+
+
 def evalInEnv(env: Env[int], e: Expr) -> int:
     match e:
+        case And(l, r):
+            lv = evalInEnv(env, l)
+            if not isBool(lv):
+                raise EvalError("'and' on non-boolean")
+            if not lv:
+                return False
+            rv = evalInEnv(env, r)
+            if not isBool(rv):
+                raise EvalError("'and' on non-boolean")
+            return rv
+        case Or(l, r):
+            lv = evalInEnv(env, l)
+            if not isBool(lv):
+                raise EvalError("'or' on non-boolean")
+            if lv:
+                return True
+            rv = evalInEnv(env, r)
+            if not isBool(rv):
+                raise EvalError("'or' on non-boolean")
+            return rv
+        case Not(s):
+            sv = evalInEnv(env, s)
+            if not isBool(sv):
+                raise EvalError("'not' on non-boolean")
+            return not sv
         case Add(l, r):
             lv = evalInEnv(env, l)
             rv = evalInEnv(env, r)
-            if not (isinstance(lv, int) and not isinstance(lv, bool)) or not (
-                isinstance(rv, int) and not isinstance(rv, bool)
-            ):
+            if not (isInt(l) and isInt(r)):
                 raise EvalError("arithmetic on non-integer")
+
             return lv + rv
         case Sub(l, r):
             return evalInEnv(env, l) - evalInEnv(env, r)
