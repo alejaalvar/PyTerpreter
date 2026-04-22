@@ -142,7 +142,7 @@ def isBool(v) -> bool:
     return isinstance(v, bool)
 
 
-def evalInEnv(env: Env[int], e: Expr) -> int | bool:
+def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
     match e:
         case And(l, r):
             lv = evalInEnv(env, l)
@@ -191,13 +191,18 @@ def evalInEnv(env: Env[int], e: Expr) -> int | bool:
         case Div(l, r):
             lv = evalInEnv(env, l)
             rv = evalInEnv(env, r)
+            if not (isInt(lv) and isInt(rv)):
+                raise EvalError("arithmetic on non-integer")
             if rv == 0:
                 raise EvalError("division by zero")
             return lv // rv
         case Neg(s):
+            sv = evalInEnv(env, s)
+            if not (isInt(sv)):
+                raise EvalError("arithmetic on non-integer")
             return -(evalInEnv(env, s))
-        case Lit(i):
-            return i
+        case Lit(v):
+            return v
         case Name(n):
             v = lookupEnv(n, env)
             if v is None:
