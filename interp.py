@@ -1,6 +1,15 @@
 from dataclasses import dataclass
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt
+
+
+@dataclass
+class Lt:
+    left: Expr
+    right: Expr
+
+    def __str__(self) -> str:
+        return f"({self.left} < {self.right})"
 
 
 @dataclass
@@ -212,7 +221,7 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
         case Neg(s):
             sv = evalInEnv(env, s)
             if not (isInt(sv)):
-                raise EvalError("arithmetic on non-integer")
+                raise EvalError("negation on non-integer")
             return -(evalInEnv(env, s))
         case Eq(l, r):
             lv = evalInEnv(env, l)
@@ -222,6 +231,12 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
             if isBool(lv) and isBool(rv):
                 return lv == rv
             return False
+        case Lt(l, r):
+            lv = evalInEnv(env, l)
+            rv = evalInEnv(env, r)
+            if not (isInt(lv) and isInt(rv)):
+                raise EvalError("comparison on non-integer")
+            return lv < rv
         case Lit(v):
             return v
         case Name(n):
