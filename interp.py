@@ -130,7 +130,7 @@ class EvalError(Exception):
     pass
 
 
-def eval(e: Expr) -> int:
+def eval(e: Expr) -> int | bool:
     return evalInEnv(emptyEnv, e)
 
 
@@ -142,7 +142,7 @@ def isBool(v) -> bool:
     return isinstance(v, bool)
 
 
-def evalInEnv(env: Env[int], e: Expr) -> int:
+def evalInEnv(env: Env[int], e: Expr) -> int | bool:
     match e:
         case And(l, r):
             lv = evalInEnv(env, l)
@@ -172,15 +172,21 @@ def evalInEnv(env: Env[int], e: Expr) -> int:
         case Add(l, r):
             lv = evalInEnv(env, l)
             rv = evalInEnv(env, r)
-            if not (isInt(l) and isInt(r)):
+            if not (isInt(lv) and isInt(rv)):
                 raise EvalError("arithmetic on non-integer")
 
             return lv + rv
         case Sub(l, r):
-            return evalInEnv(env, l) - evalInEnv(env, r)
+            lv = evalInEnv(env, l)
+            rv = evalInEnv(env, r)
+            if not (isInt(lv) and isInt(rv)):
+                raise EvalError("arithmetic on non-integer")
+            return lv - rv
         case Mul(l, r):
             lv = evalInEnv(env, l)
             rv = evalInEnv(env, r)
+            if not (isInt(lv) and isInt(rv)):
+                raise EvalError("arithmetic on non-integer")
             return lv * rv
         case Div(l, r):
             lv = evalInEnv(env, l)
