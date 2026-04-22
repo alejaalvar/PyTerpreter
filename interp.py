@@ -1,6 +1,15 @@
 from dataclasses import dataclass
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq
+
+
+@dataclass
+class Eq:
+    left: Expr
+    right: Expr
+
+    def __str__(self) -> str:
+        return f"({self.left} == {self.right})"
 
 
 @dataclass
@@ -142,6 +151,10 @@ def isBool(v) -> bool:
     return isinstance(v, bool)
 
 
+def opsAreDiffTypes(l, r) -> bool:
+    return type(l) is not type(r)
+
+
 def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
     match e:
         case And(l, r):
@@ -201,6 +214,14 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
             if not (isInt(sv)):
                 raise EvalError("arithmetic on non-integer")
             return -(evalInEnv(env, s))
+        case Eq(l, r):
+            lv = evalInEnv(env, l)
+            rv = evalInEnv(env, r)
+            if isInt(lv) and isInt(rv):
+                return lv == rv
+            if isBool(lv) and isBool(rv):
+                return lv == rv
+            return False
         case Lit(v):
             return v
         case Name(n):
