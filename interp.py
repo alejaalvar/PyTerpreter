@@ -1,6 +1,16 @@
 from dataclasses import dataclass
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If
+
+
+@dataclass
+class If:
+    cond: Expr
+    thenexpr: Expr
+    elseexpr: Expr
+
+    def __str__(self) -> str:
+        return f"(if {self.cond} then {self.thenexpr} else {self.elseexpr})"
 
 
 @dataclass
