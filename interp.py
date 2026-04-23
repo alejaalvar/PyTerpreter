@@ -385,23 +385,35 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
 
 
 def execProc(v):
-    name, args = v.stages[0]
-
     stdin_file = open(v.stdin, "r") if v.stdin else None
     stdout_file = open(v.stdout, "w") if v.stdout else None
     stderr_file = open(v.stderr, "w") if v.stderr else None
 
     try:
-        proc = subprocess.Popen(
-            [name] + args,
-            stdin=stdin_file,
-            stdout=stdout_file,
-            stderr=stderr_file,
-        )
-        proc.wait()
+        procs = []
+        num_stages = len(v.stages)
+        for i, (name, args) in enumerate(v.stages):
+            is_first = i == 0
+            is_last = i == num_stages - 1
 
-    except FileNotFoundError as e:
-        print(f"execution error: {e}")
+            stage_stdin = stdin_file if is_first else procs[i - 1].stdout
+            stage_stdout = stdout_file if is_last else subprocess.PIPE
+
+            proc = subprocess.Popen(
+                [name] + args,
+                stdin=stage_stdin,
+                stdout=stage_stdout,
+                stderr=stderr_file,
+            )
+            procs.append(proc)
+
+            # after wiring stage i+1, close stage i's stdout in our process
+            if not is_first:
+                procs[i - 1].stdout.close()
+
+        # wait for everything to finish
+        for p in procs:
+            p.wait()
     finally:
         if stdin_file:
             stdin_file.close()
@@ -424,5 +436,5 @@ def run(e: Expr) -> None:
         print(err)
 
 
-run(RedirectOut(Cmd("echo", ["hello from my DSL"]), "output.txt"))
-run(RedirectIn(RedirectOut(Cmd("cat", []), "copy.txt"), "output.txt"))
+# run(Pipe(Cmd("ls", []), Cmd("wc", ["-l"])))
+run(Pipe(Pipe(Cmd("ls", []), Cmd("grep", ["py"])), Cmd("wc", ["-l"])))
