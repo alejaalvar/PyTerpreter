@@ -1,6 +1,35 @@
 from dataclasses import dataclass
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd
+type Value = int | bool | Proc
+
+
+@dataclass
+class Cmd:
+    name: str
+    args: list[str]
+
+    def __str__(self) -> str:
+        return f"`{self.name} {' '.join(self.args)}`"
+
+
+@dataclass
+class Proc:
+    stages: list[tuple[str, list[str]]]  # one tuple per pipeline stage
+    stdin: str | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+
+    def __str__(self) -> str:
+        pipeline = " | ".join(f"{name} {' '.join(args)}" for name, args in self.stages)
+        redirs = ""
+        if self.stdin:
+            redirs += f" < {self.stdin}"
+        if self.stdout:
+            redirs += f" > {self.stdout}"
+        if self.stderr:
+            redirs += f" 2> {self.stderr}"
+        return f"`{pipeline}{redirs}`"
 
 
 @dataclass
@@ -158,7 +187,7 @@ class EvalError(Exception):
     pass
 
 
-def eval(e: Expr) -> int | bool:
+def eval(e: Expr) -> Value:
     return evalInEnv(emptyEnv, e)
 
 
@@ -170,12 +199,30 @@ def isBool(v) -> bool:
     return isinstance(v, bool)
 
 
+def isProc(v) -> bool:
+    return isinstance(v, Proc)
+
+
 def opsAreDiffTypes(l, r) -> bool:
     return type(l) is not type(r)
 
 
-def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
+def procEq(lv, rv) -> bool:
+    """
+    It is possible to return lv == rv directly in the
+    match case statement because dataclasses provides
+    field by field comparison for free, but I opt for
+    a function here in case the functionality is changed
+    in the future, in which case it is easier to modify
+    one function
+    """
+    return lv == rv
+
+
+def evalInEnv(env: Env[Value], e: Expr) -> Value:
     match e:
+        case Cmd(name, args):
+            return Proc(stages=[(name, args)])
         case And(l, r):
             lv = evalInEnv(env, l)
             if not isBool(lv):
@@ -206,7 +253,6 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
             rv = evalInEnv(env, r)
             if not (isInt(lv) and isInt(rv)):
                 raise EvalError("arithmetic on non-integer")
-
             return lv + rv
         case Sub(l, r):
             lv = evalInEnv(env, l)
@@ -240,6 +286,8 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
                 return lv == rv
             if isBool(lv) and isBool(rv):
                 return lv == rv
+            if isProc(lv) and isProc(rv):
+                return procEq(lv, rv)
             return False
         case Lt(l, r):
             lv = evalInEnv(env, l)
@@ -266,6 +314,10 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
                 return evalInEnv(env, thenexpr)
             else:
                 return evalInEnv(env, elseexpr)
+
+
+def execProc(v):
+    pass
 
 
 def run(e: Expr) -> None:
