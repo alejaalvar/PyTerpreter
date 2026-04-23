@@ -231,10 +231,6 @@ def isProc(v) -> bool:
     return isinstance(v, Proc)
 
 
-def opsAreDiffTypes(l, r) -> bool:
-    return type(l) is not type(r)
-
-
 def procEq(lv, rv) -> bool:
     """
     It is possible to return lv == rv directly in the
@@ -384,7 +380,7 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
                 return evalInEnv(env, elseexpr)
 
 
-def execProc(v):
+def execProc(v: Proc) -> None:
     stdin_file = open(v.stdin, "r") if v.stdin else None
     stdout_file = open(v.stdout, "w") if v.stdout else None
     stderr_file = open(v.stderr, "w") if v.stderr else None
@@ -436,5 +432,23 @@ def run(e: Expr) -> None:
         print(err)
 
 
-# run(Pipe(Cmd("ls", []), Cmd("wc", ["-l"])))
-run(Pipe(Pipe(Cmd("ls", []), Cmd("grep", ["py"])), Cmd("wc", ["-l"])))
+if __name__ == "__main__":
+    run(Eq(Cmd("ls", []), Cmd("ls", [])))
+    run(Pipe(Cmd("ls", []), Cmd("wc", ["-l"])))
+    run(Cmd("echo", ["hello professor!"]))
+    run(RedirectOut(Cmd("echo", ["spam and eggs"]), "spam_eggs.txt"))
+    run(RedirectOut(RedirectIn(Cmd("cat", []), "spam_eggs.txt"), "copy.txt"))
+    run(
+        RedirectIn(RedirectIn(Cmd("cat", []), "a.txt"), "b.txt")
+    )  # should raise EvalError
+    run(Add(Cmd("ls", []), Lit(1)))  # should raise an EvalError
+    run(RedirectErr(Cmd("ls", ["nonexistent-dir"]), "errors.log"))
+    run(Pipe(Pipe(Cmd("ls", []), Cmd("grep", ["py"])), Cmd("wc", ["-l"])))
+    run(
+        If(
+            Lt(Lit(1), Lit(2)),
+            Cmd("echo", ["one is less"]),
+            Cmd("echo", ["one is not less"]),
+        )
+    )
+    run(Pipe(Cmd("ls", []), Lit(5)))  # should say pipe on non-process
