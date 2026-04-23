@@ -10,17 +10,26 @@ class RedirectIn:
     proc: Expr
     filename: str
 
+    def __str__(self) -> str:
+        return f"({self.proc} < {self.filename})"
+
 
 @dataclass
 class RedirectOut:
     proc: Expr
     filename: str
 
+    def __str__(self) -> str:
+        return f"({self.proc} > {self.filename})"
+
 
 @dataclass
 class RedirectErr:
     proc: Expr
     filename: str
+
+    def __str__(self) -> str:
+        return f"({self.proc} 2> {self.filename})"
 
 
 @dataclass
@@ -359,8 +368,8 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
             if not (isInt(lv) and isInt(rv)):
                 raise EvalError("comparison on non-integer")
             return lv < rv
-        case Lit(v):
-            return v
+        case Lit(lit_val):
+            return lit_val
         case Name(n):
             v = lookupEnv(n, env)
             if v is None:
@@ -432,18 +441,54 @@ def run(e: Expr) -> None:
         print(err)
 
 
+"""
+Shell DSL
+=========
+
+This DSL extends the core language with shell-script-style process pipelines.
+Values include Proc: a pipeline of one or more Unix commands with optional
+stdin/stdout/stderr redirections.
+
+Literals: Cmd(name, args) - a single-stage pipeline running `name` with args.
+
+Operators:
+  Pipe(l, r)            -- connect l's stdout to r's stdin
+  RedirectIn(p, file)   -- read p's stdin from file
+  RedirectOut(p, file)  -- write p's stdout to file
+  RedirectErr(p, file)  -- write p's stderr to file
+
+Equality: two Procs are equal iff they have the same stages, in the same order,
+with the same redirections (structural equality).
+
+Design choices:
+- A Proc cannot have the same stream redirected twice; raises EvalError.
+- Pipe raises EvalError if the left already has stdout redirected, if the
+  right already has stdin redirected, or if both sides have stderr redirected.
+- When piping, stderr from either side (but not both) carries forward.
+- Execution is handled by `execProc`, which uses subprocess.Popen to build
+  the pipeline. Intermediate pipe ends are closed in the parent to avoid
+  deadlock.
+"""
+
 if __name__ == "__main__":
-    run(Eq(Cmd("ls", []), Cmd("ls", [])))
-    run(Pipe(Cmd("ls", []), Cmd("wc", ["-l"])))
+    # --- basic literals ---
     run(Cmd("echo", ["hello professor!"]))
+
+    # --- pipelines ---
+    run(Pipe(Cmd("ls", []), Cmd("wc", ["-l"])))  # prints count of files in cwd
+    run(
+        Pipe(Pipe(Cmd("ls", []), Cmd("grep", ["py"])), Cmd("wc", ["-l"]))
+    )  # count of .py files
+
+    # --- redirections (order matters: first creates the file the next reads) ---
     run(RedirectOut(Cmd("echo", ["spam and eggs"]), "spam_eggs.txt"))
     run(RedirectOut(RedirectIn(Cmd("cat", []), "spam_eggs.txt"), "copy.txt"))
-    run(
-        RedirectIn(RedirectIn(Cmd("cat", []), "a.txt"), "b.txt")
-    )  # should raise EvalError
-    run(Add(Cmd("ls", []), Lit(1)))  # should raise an EvalError
     run(RedirectErr(Cmd("ls", ["nonexistent-dir"]), "errors.log"))
-    run(Pipe(Pipe(Cmd("ls", []), Cmd("grep", ["py"])), Cmd("wc", ["-l"])))
+
+    # --- equality on Procs ---
+    run(Eq(Cmd("ls", []), Cmd("ls", [])))
+
+    # --- core + shell interaction ---
     run(
         If(
             Lt(Lit(1), Lit(2)),
@@ -451,4 +496,15 @@ if __name__ == "__main__":
             Cmd("echo", ["one is not less"]),
         )
     )
-    run(Pipe(Cmd("ls", []), Lit(5)))  # should say pipe on non-process
+    run(
+        Let(
+            "p",
+            RedirectOut(Cmd("echo", ["from a bound name"]), "let_out.txt"),
+            Name("p"),
+        )
+    )
+
+    # --- error cases (should all print EvalError messages, not crash) ---
+    run(RedirectIn(RedirectIn(Cmd("cat", []), "a.txt"), "b.txt"))
+    run(Add(Cmd("ls", []), Lit(1)))
+    run(Pipe(Cmd("ls", []), Lit(5)))
