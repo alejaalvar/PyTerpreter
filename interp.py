@@ -1,3 +1,4 @@
+import subprocess
 from dataclasses import dataclass, replace
 
 type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr
@@ -384,20 +385,23 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
 
 
 def execProc(v):
-    pass
+    name, args = v.stages[0]
+    proc = subprocess.Popen([name] + args)
+    proc.wait()
 
 
 def run(e: Expr) -> None:
     print(f"running: {e}")
     try:
-        i = eval(e)
-        print(f"result: {i}")
+        v = eval(e)
+        if isProc(v):
+            print(f"result: {v}")
+            execProc(v)
+        else:
+            print(f"result: {v}")
     except EvalError as err:
         print(err)
 
 
-run(If(Lit(True), Lit(1), Lit(2)))  # → 1
-run(If(Lit(False), Lit(1), Lit(2)))  # → 2
-run(If(Eq(Lit(1), Lit(1)), Lit(10), Lit(20)))  # → 10
-run(If(Lit(1), Lit(1), Lit(2)))  # → error: non-boolean condition
-run(If(Lit(True), Lit(1), Div(Lit(1), Lit(0))))  # → 1 (else branch never evaluated)
+run(Cmd("ls", ["-l"]))
+run(Cmd("echo", ["hello", "world"]))
