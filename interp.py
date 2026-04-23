@@ -258,6 +258,14 @@ def evalInEnv(env: Env[int | bool], e: Expr) -> int | bool:
             v = evalInEnv(env, d)
             newEnv = extendEnv(n, v, env)
             return evalInEnv(newEnv, b)
+        case If(cond, thenexpr, elseexpr):
+            cv = evalInEnv(env, cond)
+            if not isBool(cv):
+                raise EvalError("'if' condition is non-boolean")
+            if cv:
+                return evalInEnv(env, thenexpr)
+            else:
+                return evalInEnv(env, elseexpr)
 
 
 def run(e: Expr) -> None:
@@ -267,3 +275,10 @@ def run(e: Expr) -> None:
         print(f"result: {i}")
     except EvalError as err:
         print(err)
+
+
+run(If(Lit(True), Lit(1), Lit(2)))  # → 1
+run(If(Lit(False), Lit(1), Lit(2)))  # → 2
+run(If(Eq(Lit(1), Lit(1)), Lit(10), Lit(20)))  # → 10
+run(If(Lit(1), Lit(1), Lit(2)))  # → error: non-boolean condition
+run(If(Lit(True), Lit(1), Div(Lit(1), Lit(0))))  # → 1 (else branch never evaluated)
