@@ -386,8 +386,26 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
 
 def execProc(v):
     name, args = v.stages[0]
-    proc = subprocess.Popen([name] + args)
-    proc.wait()
+
+    stdin_file = open(v.stdin, "r") if v.stdin else None
+    stdout_file = open(v.stdout, "w") if v.stdout else None
+    stderr_file = open(v.stderr, "w") if v.stderr else None
+
+    try:
+        proc = subprocess.Popen(
+            [name] + args,
+            stdin=stdin_file,
+            stdout=stdout_file,
+            stderr=stderr_file,
+        )
+        proc.wait()
+    finally:
+        if stdin_file:
+            stdin_file.close()
+        if stdout_file:
+            stdout_file.close()
+        if stderr_file:
+            stderr_file.close()
 
 
 def run(e: Expr) -> None:
@@ -403,5 +421,4 @@ def run(e: Expr) -> None:
         print(err)
 
 
-run(Cmd("ls", ["-l"]))
-run(Cmd("echo", ["hello", "world"]))
+run(RedirectOut(Cmd("echo", ["hello from my DSL"]), "output.txt"))
