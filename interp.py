@@ -399,6 +399,9 @@ def execProc(v):
             stderr=stderr_file,
         )
         proc.wait()
+
+    except FileNotFoundError as e:
+        print(f"execution error: {e}")
     finally:
         if stdin_file:
             stdin_file.close()
@@ -422,3 +425,4 @@ def run(e: Expr) -> None:
 
 
 run(RedirectOut(Cmd("echo", ["hello from my DSL"]), "output.txt"))
+run(RedirectIn(RedirectOut(Cmd("cat", []), "copy.txt"), "output.txt"))
