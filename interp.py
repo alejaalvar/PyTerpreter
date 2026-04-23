@@ -1,7 +1,34 @@
 from dataclasses import dataclass
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr
 type Value = int | bool | Proc
+
+
+@dataclass
+class RedirectIn:
+    proc: Expr
+    filename: str
+
+
+@dataclass
+class RedirectOut:
+    proc: Expr
+    filename: str
+
+
+@dataclass
+class RedirectErr:
+    proc: Expr
+    filename: str
+
+
+@dataclass
+class Pipe:
+    left: Expr
+    right: Expr
+
+    def __str__(self) -> str:
+        return f"({self.left} | {self.right})"
 
 
 @dataclass
@@ -66,7 +93,7 @@ class Or:
     right: Expr
 
     def __str__(self) -> str:
-        return f"({self.left} or {self.right})"
+        return f"({self.left} || {self.right})"
 
 
 @dataclass
@@ -75,7 +102,7 @@ class And:
     right: Expr
 
     def __str__(self) -> str:
-        return f"({self.left} and {self.right})"
+        return f"({self.left} && {self.right})"
 
 
 @dataclass
