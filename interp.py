@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr
 type Value = int | bool | Proc
@@ -248,6 +248,46 @@ def procEq(lv, rv) -> bool:
 
 def evalInEnv(env: Env[Value], e: Expr) -> Value:
     match e:
+        case Pipe(l, r):
+            lv = evalInEnv(env, l)
+            rv = evalInEnv(env, r)
+            if not isProc(lv):
+                raise EvalError("cannot pipe: left side is not a process")
+            if not isProc(rv):
+                raise EvalError("cannot pipe: right side is not a process")
+            if lv.stdout is not None:
+                raise EvalError("cannot pipe: left side already has stdout redirected")
+            if rv.stdin is not None:
+                raise EvalError("cannot pipe: right side already has stdin redirected")
+            if lv.stderr is not None and rv.stderr is not None:
+                raise EvalError("cannot pipe: both sides have stderr redirected")
+            return Proc(
+                stages=lv.stages + rv.stages,
+                stdin=lv.stdin,
+                stdout=rv.stdout,
+                stderr=lv.stderr or rv.stderr,
+            )
+        case RedirectErr(p, f):
+            pv = evalInEnv(env, p)
+            if not isProc(pv):
+                raise EvalError("cannot redirect: input is not a process")
+            if pv.stderr is not None:
+                raise EvalError("cannot redirect stderr twice")
+            return replace(pv, stderr=f)
+        case RedirectIn(p, f):
+            pv = evalInEnv(env, p)
+            if not isProc(pv):
+                raise EvalError("cannot redirect: input is not a process")
+            if pv.stdin is not None:
+                raise EvalError("cannot redirect stdin twice")
+            return replace(pv, stdin=f)
+        case RedirectOut(p, f):
+            pv = evalInEnv(env, p)
+            if not isProc(pv):
+                raise EvalError("cannot redirect: input is not a process")
+            if pv.stdout is not None:
+                raise EvalError("cannot redirect stdout twice")
+            return replace(pv, stdout=f)
         case Cmd(name, args):
             return Proc(stages=[(name, args)])
         case And(l, r):
