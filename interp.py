@@ -1,8 +1,8 @@
 import subprocess
 from dataclasses import dataclass, replace
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr
-type Value = int | bool | Proc
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App
+type Value = int | bool | Proc | Closure
 
 
 @dataclass
@@ -191,6 +191,36 @@ class Name:
 
     def __str__(self) -> str:
         return self.name
+
+
+@dataclass
+class Letfun:
+    name: str
+    param: str
+    bodyexpr: Expr
+    inexpr: Expr
+
+    def __str__(self) -> str:
+        return f"letfun {self.name}({self.param}) = {self.bodyexpr} in {self.inexpr} end"
+
+
+@dataclass
+class App:
+    fun: Expr
+    arg: Expr
+
+    def __str__(self) -> str:
+        return f"({self.fun}({self.arg}))"
+
+
+@dataclass
+class Closure:
+    param: str
+    body: Expr
+    env: 'Env[Value]'
+
+    def __str__(self) -> str:
+        return f"<closure({self.param})>"
 
 
 type Binding[V] = tuple[str, V]  # this tuple type is always a pair
@@ -387,6 +417,20 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
                 return evalInEnv(env, thenexpr)
             else:
                 return evalInEnv(env, elseexpr)
+        case Letfun(n, p, b, i):
+            c = Closure(p, b, env)
+            newEnv = extendEnv(n, c, env)
+            c.env = newEnv          # enable recursive calls
+            return evalInEnv(newEnv, i)
+        case App(f, a):
+            fv = evalInEnv(env, f)
+            av = evalInEnv(env, a)
+            match fv:
+                case Closure(p, b, cenv):
+                    newEnv = extendEnv(p, av, cenv)
+                    return evalInEnv(newEnv, b)
+                case _:
+                    raise EvalError("application of non-function")
 
 
 def execProc(v: Proc) -> None:
@@ -435,6 +479,8 @@ def run(e: Expr) -> None:
         if isProc(v):
             print(f"result: {v}")
             execProc(v)
+        elif isinstance(v, Closure):
+            print(f"result: {v}")
         else:
             print(f"result: {v}")
     except EvalError as err:
