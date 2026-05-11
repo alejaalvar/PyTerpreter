@@ -1,27 +1,63 @@
 %import common.INT -> INT
+%import common.ESCAPED_STRING -> ESCAPED_STRING
 %import common.CNAME -> ID
 %import common.WS
 
+BACKTICK_CMD: /`[^`]+`/
+
 %ignore WS
 
-?expr: "ifnz" expr "then" expr "else" expr -> ifnz
-     | expr1
+// Lowest precedence: if-then-else
+?expr: "if" expr "then" expr "else" expr -> ite
+     | pipe_level
 
-?expr1: expr1 "+" term  -> plus
-     | expr1 "-" term -> minus
-     | term
+// Shell pipe (left-associative, above if-then-else)
+?pipe_level: pipe_level "|" or_level -> pipe
+           | or_level
 
-?term: term "*" factor -> times
-     | term "/" factor -> divide
-     | factor
+// Boolean or (left-associative)
+?or_level: or_level "||" and_level -> or
+         | and_level
 
-?factor: "-" factor  -> neg
-       |  atom
+// Boolean and (left-associative)
+?and_level: and_level "&&" not_level -> and
+          | not_level
 
+// Boolean not (unary, right-recursive)
+?not_level: "!" not_level -> not
+          | compare_level
 
-?atom: ID  -> id
-     | INT -> int
-     | atom "(" expr ")" -> app
+// Equality and relational (non-associative)
+?compare_level: redir_level "==" redir_level -> eq
+              | redir_level "<"  redir_level -> lt
+              | redir_level
+
+// Shell redirections (left-associative, tighter than comparisons)
+// RHS is always an ESCAPED_STRING, so "<" here never clashes with Lt above
+?redir_level: redir_level "<"  ESCAPED_STRING -> redirect_in
+            | redir_level ">"  ESCAPED_STRING -> redirect_out
+            | redir_level "!>" ESCAPED_STRING -> redirect_err
+            | add_level
+
+// Addition / subtraction (left-associative)
+?add_level: add_level "+" mul_level -> add
+          | add_level "-" mul_level -> sub
+          | mul_level
+
+// Multiplication / division (left-associative)
+?mul_level: mul_level "*" neg_level -> mul
+          | mul_level "/" neg_level -> div
+          | neg_level
+
+// Unary negation (right-recursive, binds tighter than * /)
+?neg_level: "-" neg_level -> neg
+          | atom
+
+// Highest precedence: atoms
+?atom: ID                                              -> id
+     | INT                                             -> int
+     | BACKTICK_CMD                                    -> cmd
+     | atom "(" expr ")"                               -> app
      | "(" expr ")"
-     | "let" ID "=" expr "in" expr "end" -> let
+     | "let"    ID "=" expr "in" expr "end"            -> let
      | "letfun" ID "(" ID ")" "=" expr "in" expr "end" -> letfun
