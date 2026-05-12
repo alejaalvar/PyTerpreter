@@ -250,14 +250,31 @@ emptyEnv: Env[Any] = ()  # the empty environment has no bindings
 
 
 def extendEnv[V](name: str, value: V, env: Env[V]) -> Env[V]:
-    """Return a new environment that extends the input environment
-    env with a new binding from name to value"""
+    """Return a new environment that prepends a binding of name to value
+    in front of the existing environment.
+
+    Args:
+        name (str): the variable name to bind
+        value (V): the value to bind to the name
+        env (Env[V]): the existing environment to extend
+
+    Returns:
+        Env[V]: a new environment with the new binding at the front
+    """
     return ((name, value),) + env
 
 
 def lookupEnv[V](name: str, env: Env[V]) -> V | None:
-    """Return the first value bound to name in the input environment env
-    (or raise an exception if there is no such binding)"""
+    """Search the environment for the first binding of name and return
+    its value. Returns None if the name is not found.
+
+    Args:
+        name (str): the variable name to look up
+        env (Env[V]): the environment to search
+
+    Returns:
+        V | None: the value bound to name, or None if not found
+    """
     match env:
         case ((n, v), *rest):
             if n == name:
@@ -273,20 +290,51 @@ class EvalError(Exception):
 
 
 def eval(e: Expr) -> Value:
+    """Evaluate an expression in the empty environment.
+
+    Args:
+        e (Expr): the expression to evaluate
+
+    Returns:
+        Value: the resulting value (int, bool, Proc, or Closure)
+    """
     return evalInEnv(emptyEnv, e)
 
 
 def isInt(v) -> bool:
-    return isinstance(v, int) and not isinstance(
-        v, bool
-    )  # bool is subtype of int
+    """Return True if v is an integer and not a boolean. Required because
+    bool is a subtype of int in Python, so isinstance(True, int) is True.
+
+    Args:
+        v: the value to check
+
+    Returns:
+        bool: True if v is a plain integer
+    """
+    return isinstance(v, int) and not isinstance(v, bool)
 
 
 def isBool(v) -> bool:
+    """Return True if v is a boolean value.
+
+    Args:
+        v: the value to check
+
+    Returns:
+        bool: True if v is a bool
+    """
     return isinstance(v, bool)
 
 
 def isProc(v) -> bool:
+    """Return True if v is a Proc (shell process description).
+
+    Args:
+        v: the value to check
+
+    Returns:
+        bool: True if v is a Proc
+    """
     return isinstance(v, Proc)
 
 
@@ -303,6 +351,20 @@ def procEq(lv, rv) -> bool:
 
 
 def evalInEnv(env: Env[Value], e: Expr) -> Value:
+    """Evaluate an expression in the given environment by pattern-matching
+    on the AST node type and recursively evaluating sub-expressions.
+
+    Args:
+        env (Env[Value]): the current variable environment
+        e (Expr): the expression to evaluate
+
+    Raises:
+        EvalError: raised for type errors, unbound variables, division by
+                   zero, or illegal shell pipeline configurations
+
+    Returns:
+        Value: the resulting value (int, bool, Proc, or Closure)
+    """
     match e:
         case Pipe(l, r):
             lv = evalInEnv(env, l)
@@ -460,6 +522,17 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
 
 
 def execProc(v: Proc) -> None:
+    """Execute a Proc value as a real shell pipeline using subprocess.
+    Opens any redirected files, wires stdin/stdout between pipeline stages,
+    closes intermediate pipe ends in the parent process to avoid deadlock,
+    and waits for all processes to finish.
+
+    Args:
+        v (Proc): the process description to execute
+
+    Returns:
+        None
+    """
     stdin_file = open(v.stdin, "r") if v.stdin else None
     stdout_file = open(v.stdout, "w") if v.stdout else None
     stderr_file = open(v.stderr, "w") if v.stderr else None
@@ -499,6 +572,16 @@ def execProc(v: Proc) -> None:
 
 
 def run(e: Expr) -> None:
+    """Top-level entry point. Evaluates an expression, prints the result,
+    and executes it if it is a Proc. Catches and prints any EvalError
+    rather than propagating it.
+
+    Args:
+        e (Expr): the expression to run
+
+    Returns:
+        None
+    """
     print(f"running: {e}")
     try:
         v = eval(e)
