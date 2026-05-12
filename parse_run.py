@@ -355,13 +355,16 @@ def genAST(t: ParseTree) -> Expr:
 
 
 def parse_and_run(s: str) -> None:
-    """
-    Pass a string to a parser to create a parse tree, pass that
-    parse tree to a tranformer to generate an abstract syntax tree,
-    and then give the AST to the interpreter.
+    """Pass a string to the parser to create a parse tree, pass that
+    parse tree to the transformer to generate an abstract syntax tree,
+    and then give the AST to the interpreter. Parse and ambiguity errors
+    are caught and printed rather than propagated.
 
     Args:
         s (str): the program represented as a string
+
+    Returns:
+        None
     """
     try:
         t = parse(s)
@@ -374,7 +377,13 @@ def parse_and_run(s: str) -> None:
 
 
 def driver():
-    """Interactive REPL loop. Exit with Ctrl+D."""
+    """Runs an interactive REPL loop, repeatedly prompting the user for
+    an expression, parsing it, and running it. Exits cleanly on Ctrl+D
+    (EOF).
+
+    Returns:
+        None
+    """
     while True:
         try:
             s = input("> ")
