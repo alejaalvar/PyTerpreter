@@ -1,10 +1,13 @@
 %import common.INT -> INT
+// this matches double-quoted strings: e.g., "hello world"
 %import common.ESCAPED_STRING -> ESCAPED_STRING
 %import common.CNAME -> ID
 %import common.WS
 
+// Custom terminal for matching anything between backticks: e.g., `echo hello world`
 BACKTICK_CMD: /`[^`]+`/
 
+// This tells the lexer to discard whitespace
 %ignore WS
 
 // Lowest precedence: if-then-else

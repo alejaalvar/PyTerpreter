@@ -3,18 +3,36 @@ from lark.exceptions import VisitError
 from pathlib import Path
 
 from interp import (
-    Add, Sub, Mul, Div, Neg, Lit, Let, Name,
-    Or, And, Not, Eq, Lt, If,
-    Cmd, Pipe, RedirectIn, RedirectOut, RedirectErr,
-    Letfun, App,
-    Expr, run,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Neg,
+    Lit,
+    Let,
+    Name,
+    Or,
+    And,
+    Not,
+    Eq,
+    Lt,
+    If,
+    Cmd,
+    Pipe,
+    RedirectIn,
+    RedirectOut,
+    RedirectErr,
+    Letfun,
+    App,
+    Expr,
+    run,
 )
 
 parser = Lark(
-    Path('expr.lark').read_text(),
-    start='expr',
-    parser='earley',
-    ambiguity='explicit',
+    Path("expr.lark").read_text(),
+    start="expr",
+    parser="earley",
+    ambiguity="explicit",
 )
 
 
@@ -36,9 +54,9 @@ class ToExpr(Transformer[Token, Expr]):
     # ── atoms ─────────────────────────────────────────────────────────────
     def id(self, args: tuple) -> Expr:
         name = str(args[0])
-        if name == 'true':
+        if name == "true":
             return Lit(True)
-        if name == 'false':
+        if name == "false":
             return Lit(False)
         return Name(name)
 
@@ -97,7 +115,7 @@ class ToExpr(Transformer[Token, Expr]):
         return Pipe(args[0], args[1])
 
     def redirect_in(self, args: tuple) -> Expr:
-        return RedirectIn(args[0], str(args[1])[1:-1])   # strip quotes
+        return RedirectIn(args[0], str(args[1])[1:-1])  # strip quotes
 
     def redirect_out(self, args: tuple) -> Expr:
         return RedirectOut(args[0], str(args[1])[1:-1])
@@ -108,9 +126,11 @@ class ToExpr(Transformer[Token, Expr]):
 
 # 'not', 'and', 'or' are Python keywords and cannot be used in def statements.
 # setattr takes plain strings, so Lark's getattr(self, rule_name) will find them.
-setattr(ToExpr, 'not', lambda _, args: Not(args[0]))
-setattr(ToExpr, 'and', lambda _, args: And(args[0], args[1]))
-setattr(ToExpr, 'or',  lambda _, args: Or(args[0], args[1]))
+# this dynamically sets the attributes 'not,and,or' to their corresponding
+# lambda functions to get around the keyword issue
+setattr(ToExpr, "not", lambda _, args: Not(args[0]))
+setattr(ToExpr, "and", lambda _, args: And(args[0], args[1]))
+setattr(ToExpr, "or", lambda _, args: Or(args[0], args[1]))
 
 
 def parse(s: str) -> ParseTree:
@@ -121,6 +141,18 @@ def parse(s: str) -> ParseTree:
 
 
 def genAST(t: ParseTree) -> Expr:
+    """Generate an abstract syntax tree given a parse tree
+
+    Args:
+        t (ParseTree): the parse tree to read
+
+    Raises:
+        AmbiguousParse: _description_
+        e: _description_
+
+    Returns:
+        Expr: _description_
+    """
     try:
         return ToExpr().transform(t)
     except VisitError as e:
@@ -130,6 +162,14 @@ def genAST(t: ParseTree) -> Expr:
 
 
 def parse_and_run(s: str) -> None:
+    """
+    Pass a string to a parser to create a parse tree, pass that
+    parse tree to a tranformer to generate an abstract syntax tree,
+    and then give the AST to the interpreter.
+
+    Args:
+        s (str): the program represented as a string
+    """
     try:
         t = parse(s)
         ast = genAST(t)
@@ -140,21 +180,33 @@ def parse_and_run(s: str) -> None:
         print(f"parse error: {e}")
 
 
+def driver():
+    """Interactive REPL loop. Exit with Ctrl+D."""
+    while True:
+        try:
+            s = input("> ")
+            parse_and_run(s)
+        except EOFError:
+            break
+
+
 # ── Core language tests ───────────────────────────────────────────────────────
-parse_and_run('1 + 2 * 3')                                     # 7
-parse_and_run('let x = 10 in x - 4 end')                       # 6
-parse_and_run('if true then 42 else 0')                        # 42
-parse_and_run('if 3 < 5 then true else false')                 # True
-parse_and_run('!false || true && false')                       # True
-parse_and_run('letfun double(x) = x + x in double(7) end')    # 14
-parse_and_run('letfun fact(n) = if n == 0 then 1 else n * fact(n - 1) in fact(5) end')  # 120
+parse_and_run("1 + 2 * 3")  # 7
+parse_and_run("let x = 10 in x - 4 end")  # 6
+parse_and_run("if true then 42 else 0")  # 42
+parse_and_run("if 3 < 5 then true else false")  # True
+parse_and_run("!false || true && false")  # True
+parse_and_run("letfun double(x) = x + x in double(7) end")  # 14
+parse_and_run(
+    "letfun fact(n) = if n == 0 then 1 else n * fact(n - 1) in fact(5) end"
+)  # 120
 
 # ── Shell DSL tests ───────────────────────────────────────────────────────────
-parse_and_run('`echo hello professor`')                        # executes echo
-parse_and_run('`ls` | `wc -l`')                                # file count
-parse_and_run('`ls` | `grep py` | `wc -l`')                    # .py file count
-parse_and_run('`echo spam and eggs` > "spam_eggs.txt"')        # write file
-parse_and_run('`cat` < "spam_eggs.txt"')                       # read and print file
-parse_and_run('`ls nonexistent_dir` !> "err.txt"')             # stderr to file
-parse_and_run('if 1 < 2 then `echo one is less` else `echo one is not less`')
-parse_and_run('let p = `echo bound name` in p end')
+parse_and_run("`echo hello professor`")  # executes echo
+parse_and_run("`ls` | `wc -l`")  # file count
+parse_and_run("`ls` | `grep py` | `wc -l`")  # .py file count
+parse_and_run('`echo spam and eggs` > "spam_eggs.txt"')  # write file
+parse_and_run('`cat` < "spam_eggs.txt"')  # read and print file
+parse_and_run('`ls nonexistent_dir` !> "err.txt"')  # stderr to file
+parse_and_run("if 1 < 2 then `echo one is less` else `echo one is not less`")
+parse_and_run("let p = `echo bound name` in p end")
