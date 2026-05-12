@@ -1,3 +1,16 @@
+"""
+interp.py — AST definitions and evaluator for a Shell DSL expression language.
+
+Defines the full set of AST node dataclasses for the core language (arithmetic,
+booleans, comparisons, conditionals, let-bindings, and first-class functions)
+and the Shell DSL extension (Cmd, Pipe, RedirectIn, RedirectOut, RedirectErr).
+
+The evaluator (evalInEnv) pattern-matches on AST nodes and recursively computes
+a Value, which is one of: int, bool, Proc, or Closure. The run() function serves
+as the top-level entry point, printing the result and executing any Proc values
+as real shell pipelines via subprocess.
+"""
+
 import subprocess
 from dataclasses import dataclass, replace
 
@@ -58,7 +71,9 @@ class Proc:
     stderr: str | None = None
 
     def __str__(self) -> str:
-        pipeline = " | ".join(f"{name} {' '.join(args)}" for name, args in self.stages)
+        pipeline = " | ".join(
+            f"{name} {' '.join(args)}" for name, args in self.stages
+        )
         redirs = ""
         if self.stdin:
             redirs += f" < {self.stdin}"
@@ -217,7 +232,7 @@ class App:
 class Closure:
     param: str
     body: Expr
-    env: 'Env[Value]'
+    env: "Env[Value]"
 
     def __str__(self) -> str:
         return f"<closure({self.param})>"
@@ -259,7 +274,9 @@ def eval(e: Expr) -> Value:
 
 
 def isInt(v) -> bool:
-    return isinstance(v, int) and not isinstance(v, bool)  # bool is subtype of int
+    return isinstance(v, int) and not isinstance(
+        v, bool
+    )  # bool is subtype of int
 
 
 def isBool(v) -> bool:
@@ -292,11 +309,17 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
             if not isProc(rv):
                 raise EvalError("cannot pipe: right side is not a process")
             if lv.stdout is not None:
-                raise EvalError("cannot pipe: left side already has stdout redirected")
+                raise EvalError(
+                    "cannot pipe: left side already has stdout redirected"
+                )
             if rv.stdin is not None:
-                raise EvalError("cannot pipe: right side already has stdin redirected")
+                raise EvalError(
+                    "cannot pipe: right side already has stdin redirected"
+                )
             if lv.stderr is not None and rv.stderr is not None:
-                raise EvalError("cannot pipe: both sides have stderr redirected")
+                raise EvalError(
+                    "cannot pipe: both sides have stderr redirected"
+                )
             return Proc(
                 stages=lv.stages + rv.stages,
                 stdin=lv.stdin,
@@ -420,7 +443,7 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
         case Letfun(n, p, b, i):
             c = Closure(p, b, env)
             newEnv = extendEnv(n, c, env)
-            c.env = newEnv          # enable recursive calls
+            c.env = newEnv  # enable recursive calls
             return evalInEnv(newEnv, i)
         case App(f, a):
             fv = evalInEnv(env, f)

@@ -1,3 +1,17 @@
+"""
+parse_run.py — Parser and transformer for the Shell DSL expression language.
+
+Loads the Lark grammar from expr.lark and uses it to parse concrete syntax
+strings into Lark parse trees. The ToExpr transformer then walks each parse
+tree bottom-up, calling a dedicated method per grammar rule to convert each
+node into the corresponding AST dataclass defined in interp.py.
+
+The top-level entry point is parse_and_run(), which runs the full pipeline:
+    string → parse tree → AST → evaluated result
+
+A driver() REPL is also provided for interactive use.
+"""
+
 from lark import Lark, Token, ParseTree, Transformer
 from lark.exceptions import VisitError
 from pathlib import Path
