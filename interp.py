@@ -11,6 +11,9 @@ as the top-level entry point, printing the result and executing any Proc values
 as real shell pipelines via subprocess.
 """
 
+# Required packages (install via pip install -r requirements.txt):
+#   lark==1.3.1
+
 import subprocess
 from dataclasses import dataclass, replace
 

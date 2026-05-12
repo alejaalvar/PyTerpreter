@@ -14,7 +14,12 @@ BACKTICK_CMD: /`[^`]+`/
 ?expr: "if" expr "then" expr "else" expr -> ite
      | pipe_level
 
-// Shell pipe (left-associative, above if-then-else)
+// Shell pipe (left-associative, sits just above if-then-else).
+// Pipe connects two whole process expressions, so it binds more loosely
+// than redirections — this ensures redirections are applied to individual
+// commands before those commands are piped together.
+// e.g. `ls` > "out.txt" | `grep py` correctly parses as
+//      Pipe(RedirectOut(`ls`, "out.txt"), `grep py`)
 ?pipe_level: pipe_level "|" or_level -> pipe
            | or_level
 
@@ -35,8 +40,12 @@ BACKTICK_CMD: /`[^`]+`/
               | redir_level "<"  redir_level -> lt
               | redir_level
 
-// Shell redirections (left-associative, tighter than comparisons)
-// RHS is always an ESCAPED_STRING, so "<" here never clashes with Lt above
+// Shell redirections (left-associative, sits between +/- and comparisons).
+// Redirections modify a single command — they're an attribute of a process —
+// so they bind tightly, close to the command itself. Placing them above
+// comparisons means e.g. `ls` > "out.txt" == `cat` > "out.txt" correctly
+// parses as Eq(RedirectOut(`ls`,...), RedirectOut(`cat`,...)).
+// RHS is always an ESCAPED_STRING, so "<" here never clashes with Lt above.
 ?redir_level: redir_level "<"  ESCAPED_STRING -> redirect_in
             | redir_level ">"  ESCAPED_STRING -> redirect_out
             | redir_level "!>" ESCAPED_STRING -> redirect_err

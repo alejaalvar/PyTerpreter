@@ -17,13 +17,28 @@ gets executed when the program runs.
 
 ---
 
-## Setup
+## Setup (Unix/Linux)
 
+**1. Clone the repository and navigate into it:**
+```bash
+git clone <repo-url>
+cd PyTerpreter
+```
+
+**2. Create and activate a virtual environment:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install lark
 ```
+
+**3. Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+Dependencies (from `requirements.txt`):
+- `lark` — parser library used to parse the language grammar
+- `pytest` — test runner for the core language test suite
 
 ---
 
