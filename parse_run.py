@@ -41,6 +41,7 @@ from interp import (
     Expr,
     run,
     Assign,
+    Seq,
 )
 
 parser = Lark(
@@ -61,6 +62,9 @@ class AmbiguousParse(Exception):
 
 class ToExpr(Transformer[Token, Expr]):
     """Transform a Lark parse tree into an AST."""
+
+    def seq(self, args: tuple[Expr, Expr]) -> Expr:
+        return Seq(args[0], args[1])
 
     def assign(self, args: tuple) -> Expr:
         """

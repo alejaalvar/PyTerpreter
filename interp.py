@@ -18,8 +18,8 @@ import subprocess
 from dataclasses import dataclass, replace
 
 """
-See Python docs for more specifics, but we import this because it helps the type checker
-perform some type narrowing. For example, in the evalInEnv function, there are branches
+See Python docs for more specifics - importing this helps the type checker
+perform type narrowing. For example, in the evalInEnv function, there are branches
 that we want to assume the inferred type is a Proc, but PyLance cannot do this automatically,
 so we can use TypeGuards to help it perform type narrowing
 """
@@ -27,8 +27,17 @@ from typing import (
     TypeGuard,
 )
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App | Assign
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App | Assign | Seq
 type Value = int | bool | Proc | Closure
+
+
+@dataclass
+class Seq:
+    expr1: Expr
+    expr2: Expr
+
+    def __str__(self) -> str:
+        return f"({self.expr1}; {self.expr2})"
 
 
 @dataclass
@@ -413,13 +422,16 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
         Value: the resulting value (int, bool, Proc, or Closure)
     """
     match e:
+        case Seq(e1, e2):
+            evalInEnv(env, e1)
+            return evalInEnv(env, e2)
         case Assign(n, e):
             name_loc = lookupEnv(n, env)
-            ev = evalInEnv(env, e)
             if name_loc is None:
                 raise EvalError(f"unbound name {n}")
             if isinstance(name_loc, FunLoc):
                 raise EvalError(f"cannot assign to a function name")
+            ev = evalInEnv(env, e)
             setLoc(name_loc, ev)
             return ev
 
