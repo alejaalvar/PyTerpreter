@@ -13,7 +13,7 @@ BACKTICK_CMD: /`[^`]+`/
 ?expr: assign_level ";" expr -> seq
      | assign_level
 
-?assign_level: "if" expr "then" expr "else" expr -> ite
+?assign_level: "if" expr "then" expr "else" assign_level -> ite
      | ID ":=" assign_level -> assign
      | "show" assign_level -> show
      | pipe_level

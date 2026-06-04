@@ -468,10 +468,10 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
         case Show(e):
             v = evalInEnv(env, e)
             if isProc(v):
-                print(f"result: {v}")
+                print(v)
                 execProc(v)
             else:
-                print(f"result: {v}")
+                print(v)
             return v
         case Seq(e1, e2):
             evalInEnv(env, e1)
@@ -482,6 +482,8 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
                 raise EvalError(f"unbound name {n}")
             if isinstance(name_loc, FunLoc):
                 raise EvalError(f"cannot assign to a function name")
+            if isinstance(getLoc(name_loc), Closure):
+                raise EvalError(f"cannot assign to a variable holding a function value")
             ev = evalInEnv(env, e)
             setLoc(name_loc, ev)
             return ev
