@@ -14,7 +14,8 @@ BACKTICK_CMD: /`[^`]+`/
      | assign_level
 
 ?assign_level: "if" expr "then" expr "else" expr -> ite
-     | ID ":=" expr -> assign
+     | ID ":=" assign_level -> assign
+     | "show" assign_level -> show
      | pipe_level
 
 // Shell pipe (left-associative, sits just above if-then-else).

@@ -27,8 +27,16 @@ from typing import (
     TypeGuard,
 )
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App | Assign | Seq
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App | Assign | Seq | Show
 type Value = int | bool | Proc | Closure
+
+
+@dataclass
+class Show:
+    expr: Expr
+
+    def __str__(self):
+        return f"(Show {self.expr})"
 
 
 @dataclass
@@ -422,6 +430,14 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
         Value: the resulting value (int, bool, Proc, or Closure)
     """
     match e:
+        case Show(e):
+            v = evalInEnv(env, e)
+            if isProc(v):
+                print(f"result: {v}")
+                execProc(v)
+            else:
+                print(f"result: {v}")
+            return v
         case Seq(e1, e2):
             evalInEnv(env, e1)
             return evalInEnv(env, e2)
