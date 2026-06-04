@@ -27,8 +27,17 @@ from typing import (
     TypeGuard,
 )
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App | Assign
 type Value = int | bool | Proc | Closure
+
+
+@dataclass
+class Assign:
+    name: str
+    expr: Expr
+
+    def __str__(self):
+        return f"({self.name} := {self.expr})"
 
 
 @dataclass
@@ -311,6 +320,16 @@ def setLoc[V](loc: Loc[V], value: V) -> None:
     loc[0] = value
 
 
+class FunLoc(list):
+    """
+    Utility class for handling invalid assignment to function name exceptions.
+    By making FunLoc a child class of list, we preserve the ability to use
+    getLoc on FunLoc. Utilized in the Assign case inside of evalInEnv.
+    """
+
+    pass
+
+
 class EvalError(Exception):
     pass
 
@@ -394,6 +413,13 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
         Value: the resulting value (int, bool, Proc, or Closure)
     """
     match e:
+        case Assign(n, e):
+            name_loc = lookupEnv(n, env)
+            if name_loc is None:
+                raise EvalError(f"unbound name {n}")
+            if isinstance(name_loc, FunLoc):
+                raise EvalError(f"cannot assign to a function name")
+
         case Pipe(l, r):
             lv = evalInEnv(env, l)
             rv = evalInEnv(env, r)
@@ -511,7 +537,9 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
         case Lit(lit_val):
             return lit_val
         case Name(n):
-            loc = lookupEnv(n, env)
+            loc = lookupEnv(
+                n, env
+            )  # TODO: fix the naming convention here - name_loc for the assign case is a little ambig
             if loc is None:
                 raise EvalError(f"unbound name {n}")
             return getLoc(loc)
