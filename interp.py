@@ -17,8 +17,67 @@ as real shell pipelines via subprocess.
 import subprocess
 from dataclasses import dataclass, replace
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App
+"""
+See Python docs for more specifics - importing this helps the type checker
+perform type narrowing. For example, in the evalInEnv function, there are branches
+that we want to assume the inferred type is a Proc, but PyLance cannot do this automatically,
+so we can use TypeGuards to help it perform type narrowing
+"""
+from typing import (
+    TypeGuard,
+)
+
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | RedirectAppend | Tee | Letfun | App | Assign | Seq | Show | Read
 type Value = int | bool | Proc | Closure
+
+
+@dataclass
+class Read:
+    pass
+
+
+@dataclass
+class Show:
+    expr: Expr
+
+    def __str__(self):
+        return f"(Show {self.expr})"
+
+
+@dataclass
+class Seq:
+    expr1: Expr
+    expr2: Expr
+
+    def __str__(self) -> str:
+        return f"({self.expr1}; {self.expr2})"
+
+
+@dataclass
+class Assign:
+    name: str
+    expr: Expr
+
+    def __str__(self):
+        return f"({self.name} := {self.expr})"
+
+
+@dataclass
+class RedirectAppend:
+    proc: Expr
+    filename: str
+
+    def __str__(self) -> str:
+        return f"({self.proc} >> {self.filename})"
+
+
+@dataclass
+class Tee:
+    proc: Expr
+    filename: str
+
+    def __str__(self) -> str:
+        return f"({self.proc} tee {self.filename})"
 
 
 @dataclass
@@ -72,16 +131,20 @@ class Proc:
     stdin: str | None = None
     stdout: str | None = None
     stderr: str | None = None
+    stdout_append: str | None = None
+    tee: str | None = None
 
     def __str__(self) -> str:
-        pipeline = " | ".join(
-            f"{name} {' '.join(args)}" for name, args in self.stages
-        )
+        pipeline = " | ".join(f"{name} {' '.join(args)}" for name, args in self.stages)
         redirs = ""
         if self.stdin:
             redirs += f" < {self.stdin}"
         if self.stdout:
             redirs += f" > {self.stdout}"
+        if self.stdout_append:
+            redirs += f" >> {self.stdout_append}"
+        if self.tee:
+            redirs += f" tee {self.tee}"
         if self.stderr:
             redirs += f" 2> {self.stderr}"
         return f"`{pipeline}{redirs}`"
@@ -219,7 +282,9 @@ class Letfun:
     inexpr: Expr
 
     def __str__(self) -> str:
-        return f"letfun {self.name}({self.param}) = {self.bodyexpr} in {self.inexpr} end"
+        return (
+            f"letfun {self.name}({self.param}) = {self.bodyexpr} in {self.inexpr} end"
+        )
 
 
 @dataclass
@@ -235,7 +300,7 @@ class App:
 class Closure:
     param: str
     body: Expr
-    env: "Env[Value]"
+    env: "Env[Loc[Value]]"
 
     def __str__(self) -> str:
         return f"<closure({self.param})>"
@@ -285,6 +350,32 @@ def lookupEnv[V](name: str, env: Env[V]) -> V | None:
             return None
 
 
+# model memory locations as (mutable) singleton lists
+type Loc[V] = list[V]  # always a singleton list
+
+
+def newLoc[V](value: V) -> Loc[V]:
+    return [value]
+
+
+def getLoc[V](loc: Loc[V]) -> V:
+    return loc[0]
+
+
+def setLoc[V](loc: Loc[V], value: V) -> None:
+    loc[0] = value
+
+
+class FunLoc(list):
+    """
+    Utility class for handling invalid assignment to function name exceptions.
+    By making FunLoc a child class of list, we preserve the ability to use
+    getLoc on FunLoc. Utilized in the Assign case inside of evalInEnv.
+    """
+
+    pass
+
+
 class EvalError(Exception):
     pass
 
@@ -301,39 +392,41 @@ def eval(e: Expr) -> Value:
     return evalInEnv(emptyEnv, e)
 
 
-def isInt(v) -> bool:
-    """Return True if v is an integer and not a boolean. Required because
-    bool is a subtype of int in Python, so isinstance(True, int) is True.
+def isInt(v) -> TypeGuard[int]:
+    """
+    Check if the given value is an integer. Note that bool is a subtype of int
+    in Python, making an singular isinstance check alone insufficent
 
     Args:
         v: the value to check
 
     Returns:
-        bool: True if v is a plain integer
+        TypeGuard[int]: True if v is an integer
     """
     return isinstance(v, int) and not isinstance(v, bool)
 
 
-def isBool(v) -> bool:
-    """Return True if v is a boolean value.
+def isBool(v) -> TypeGuard[bool]:
+    """Check if the given value is a boolean
 
     Args:
         v: the value to check
 
     Returns:
-        bool: True if v is a bool
+        TypeGuard: True if v is a bool
     """
     return isinstance(v, bool)
 
 
-def isProc(v) -> bool:
-    """Return True if v is a Proc (shell process description).
+def isProc(v) -> TypeGuard[Proc]:
+    """
+    Check if the given value is a Proc type (shell process description)
 
     Args:
         v: the value to check
 
     Returns:
-        bool: True if v is a Proc
+        TypeGuard[Proc]: True if v is a Proc
     """
     return isinstance(v, Proc)
 
@@ -350,12 +443,12 @@ def procEq(lv, rv) -> bool:
     return lv == rv
 
 
-def evalInEnv(env: Env[Value], e: Expr) -> Value:
+def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
     """Evaluate an expression in the given environment by pattern-matching
     on the AST node type and recursively evaluating sub-expressions.
 
     Args:
-        env (Env[Value]): the current variable environment
+        env (Env[Loc[Value]]): the current variable environment
         e (Expr): the expression to evaluate
 
     Raises:
@@ -366,6 +459,35 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
         Value: the resulting value (int, bool, Proc, or Closure)
     """
     match e:
+        case Read():
+            value_read: str = input("Enter an integer: ")
+            try:
+                return int(value_read)
+            except ValueError:
+                raise EvalError(f"read: expected an integer, got `{value_read}`")
+        case Show(e):
+            v = evalInEnv(env, e)
+            if isProc(v):
+                print(v)
+                execProc(v)
+            else:
+                print(v)
+            return v
+        case Seq(e1, e2):
+            evalInEnv(env, e1)
+            return evalInEnv(env, e2)
+        case Assign(n, e):
+            name_loc = lookupEnv(n, env)
+            if name_loc is None:
+                raise EvalError(f"unbound name {n}")
+            if isinstance(name_loc, FunLoc):
+                raise EvalError(f"cannot assign to a function name")
+            if isinstance(getLoc(name_loc), Closure):
+                raise EvalError(f"cannot assign to a variable holding a function value")
+            ev = evalInEnv(env, e)
+            setLoc(name_loc, ev)
+            return ev
+
         case Pipe(l, r):
             lv = evalInEnv(env, l)
             rv = evalInEnv(env, r)
@@ -373,18 +495,12 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
                 raise EvalError("cannot pipe: left side is not a process")
             if not isProc(rv):
                 raise EvalError("cannot pipe: right side is not a process")
-            if lv.stdout is not None:
-                raise EvalError(
-                    "cannot pipe: left side already has stdout redirected"
-                )
+            if lv.stdout is not None or lv.stdout_append is not None or lv.tee is not None:
+                raise EvalError("cannot pipe: left side already has stdout redirected")
             if rv.stdin is not None:
-                raise EvalError(
-                    "cannot pipe: right side already has stdin redirected"
-                )
+                raise EvalError("cannot pipe: right side already has stdin redirected")
             if lv.stderr is not None and rv.stderr is not None:
-                raise EvalError(
-                    "cannot pipe: both sides have stderr redirected"
-                )
+                raise EvalError("cannot pipe: both sides have stderr redirected")
             return Proc(
                 stages=lv.stages + rv.stages,
                 stdin=lv.stdin,
@@ -411,7 +527,33 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
                 raise EvalError("cannot redirect: input is not a process")
             if pv.stdout is not None:
                 raise EvalError("cannot redirect stdout twice")
+            if pv.stdout_append is not None:
+                raise EvalError("cannot redirect stdout: already appending to a file")
+            if pv.tee is not None:
+                raise EvalError("cannot redirect stdout: already tee-ing to a file")
             return replace(pv, stdout=f)
+        case RedirectAppend(p, f):
+            pv = evalInEnv(env, p)
+            if not isProc(pv):
+                raise EvalError("cannot append redirect: input is not a process")
+            if pv.stdout is not None:
+                raise EvalError("cannot append redirect: stdout already redirected")
+            if pv.stdout_append is not None:
+                raise EvalError("cannot append redirect to two files")
+            if pv.tee is not None:
+                raise EvalError("cannot append redirect: already tee-ing to a file")
+            return replace(pv, stdout_append=f)
+        case Tee(p, f):
+            pv = evalInEnv(env, p)
+            if not isProc(pv):
+                raise EvalError("cannot tee: input is not a process")
+            if pv.stdout is not None:
+                raise EvalError("cannot tee: stdout already redirected")
+            if pv.stdout_append is not None:
+                raise EvalError("cannot tee: already appending to a file")
+            if pv.tee is not None:
+                raise EvalError("cannot tee to two files")
+            return replace(pv, tee=f)
         case Cmd(name, args):
             return Proc(stages=[(name, args)])
         case And(l, r):
@@ -489,13 +631,15 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
         case Lit(lit_val):
             return lit_val
         case Name(n):
-            v = lookupEnv(n, env)
-            if v is None:
+            loc = lookupEnv(
+                n, env
+            )  # TODO: fix the naming convention here - name_loc for the assign case is a little ambig
+            if loc is None:
                 raise EvalError(f"unbound name {n}")
-            return v
+            return getLoc(loc)
         case Let(n, d, b):
             v = evalInEnv(env, d)
-            newEnv = extendEnv(n, v, env)
+            newEnv = extendEnv(n, newLoc(v), env)
             return evalInEnv(newEnv, b)
         case If(cond, thenexpr, elseexpr):
             cv = evalInEnv(env, cond)
@@ -507,7 +651,14 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
                 return evalInEnv(env, elseexpr)
         case Letfun(n, p, b, i):
             c = Closure(p, b, env)
-            newEnv = extendEnv(n, c, env)
+            """
+            fun_loc: Loc[Value] = newLoc(
+                c
+            )  # we use the name `fun_loc` to avoid collisons & type errors - this is all one scope
+            """
+            # avoid collisions & type errors by using slightly different names for each loc variable - its all one scope
+            fun_loc: Loc[Value] = FunLoc([c])
+            newEnv = extendEnv(n, fun_loc, env)
             c.env = newEnv  # enable recursive calls
             return evalInEnv(newEnv, i)
         case App(f, a):
@@ -515,7 +666,7 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
             av = evalInEnv(env, a)
             match fv:
                 case Closure(p, b, cenv):
-                    newEnv = extendEnv(p, av, cenv)
+                    newEnv = extendEnv(p, newLoc(av), cenv)
                     return evalInEnv(newEnv, b)
                 case _:
                     raise EvalError("application of non-function")
@@ -534,13 +685,18 @@ def execProc(v: Proc) -> None:
         None
     """
     stdin_file = open(v.stdin, "r") if v.stdin else None
-    stdout_file = open(v.stdout, "w") if v.stdout else None
+    stdout_file = (
+        open(v.stdout, "w") if v.stdout else
+        open(v.stdout_append, "a") if v.stdout_append else
+        None
+    )
     stderr_file = open(v.stderr, "w") if v.stderr else None
+    stages = v.stages + [("tee", [v.tee])] if v.tee else v.stages
 
     try:
         procs = []
-        num_stages = len(v.stages)
-        for i, (name, args) in enumerate(v.stages):
+        num_stages = len(stages)
+        for i, (name, args) in enumerate(stages):
             is_first = i == 0
             is_last = i == num_stages - 1
 

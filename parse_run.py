@@ -40,6 +40,12 @@ from interp import (
     App,
     Expr,
     run,
+    Assign,
+    Seq,
+    Show,
+    Read,
+    RedirectAppend,
+    Tee,
 )
 
 parser = Lark(
@@ -61,14 +67,29 @@ class AmbiguousParse(Exception):
 class ToExpr(Transformer[Token, Expr]):
     """Transform a Lark parse tree into an AST."""
 
+    def show(self, args: tuple) -> Expr:
+        return Show(args[0])
+
+    def seq(self, args: tuple[Expr, Expr]) -> Expr:
+        return Seq(args[0], args[1])
+
+    def assign(self, args: tuple) -> Expr:
+        """
+        Handles an assignment
+        """
+        return Assign(str(args[0]), args[1])
+
     # ── ambiguity marker ──────────────────────────────────────────────────
-    def _ambig(self, _):
+    def _ambig(self, alternatives):
         """
-        Called by Lark when the Earley parser finds multiple valid parse trees
-        for the same input (an ambiguous grammar). Raises AmbiguousParse to
-        signal this upstream. The parameter is required by Lark's Transformer
-        interface but unused since we raise unconditionally
+        Called by Lark when the Earley parser finds multiple valid parse trees.
+        Prefers Show(x) over App(Name("show"), x) to resolve the show(x) ambiguity,
+        since show is a keyword whose parenthesized form should parse as Show.
+        All other ambiguities raise AmbiguousParse.
         """
+        show_alts = [a for a in alternatives if isinstance(a, Show)]
+        if show_alts:
+            return show_alts[0]
         raise AmbiguousParse()
 
     # ── atoms ─────────────────────────────────────────────────────────────
@@ -89,6 +110,8 @@ class ToExpr(Transformer[Token, Expr]):
             return Lit(True)
         if name == "false":
             return Lit(False)
+        if name == "read":
+            return Read()
         return Name(name)
 
     def int(self, args: tuple) -> Expr:
@@ -312,6 +335,12 @@ class ToExpr(Transformer[Token, Expr]):
         """
         return RedirectErr(args[0], str(args[1])[1:-1])
 
+    def redirect_append(self, args: tuple) -> Expr:
+        return RedirectAppend(args[0], str(args[1])[1:-1])
+
+    def tee(self, args: tuple) -> Expr:
+        return Tee(args[0], str(args[1])[1:-1])
+
 
 """
 'not', 'and', 'or' are Python keywords and cannot be used in def statements.
@@ -319,15 +348,11 @@ setattr takes plain strings, so Lark's getattr(self, rule_name) will find them.
 this dynamically sets the attributes 'not,and,or' to corresponding
 lambda functions to get around the keyword issue
 """
-setattr(
-    ToExpr, "not", lambda _, args: Not(args[0])
-)  # returns a simple Not node
+setattr(ToExpr, "not", lambda _, args: Not(args[0]))  # returns a simple Not node
 setattr(
     ToExpr, "and", lambda _, args: And(args[0], args[1])
 )  # returns a simple And node
-setattr(
-    ToExpr, "or", lambda _, args: Or(args[0], args[1])
-)  # returns a simple Or node
+setattr(ToExpr, "or", lambda _, args: Or(args[0], args[1]))  # returns a simple Or node
 
 
 def parse(s: str) -> ParseTree:
@@ -366,6 +391,22 @@ def genAST(t: ParseTree) -> Expr:
         if isinstance(e.orig_exc, AmbiguousParse):
             raise AmbiguousParse()
         raise e
+
+
+def just_parse(s: str) -> Expr | None:
+    """Parse a concrete syntax string and return the AST without evaluating it.
+    Returns None if the string is syntactically invalid or ambiguous.
+
+    Args:
+        s (str): the program represented as a string
+
+    Returns:
+        Expr | None: the resulting AST, or None on parse/ambiguity error
+    """
+    try:
+        return genAST(parse(s))
+    except (ParseError, AmbiguousParse):
+        return None
 
 
 def parse_and_run(s: str) -> None:
@@ -426,3 +467,10 @@ parse_and_run('`cat` < "spam_eggs.txt"')  # read and print file
 parse_and_run('`ls nonexistent_dir` !> "err.txt"')  # stderr to file
 parse_and_run("if 1 < 2 then `echo one is less` else `echo one is not less`")
 parse_and_run("let p = `echo bound name` in p end")
+
+# ── Shell DSL extension: append redirect and tee ──────────────────────────────
+parse_and_run('`echo line one` > "append_demo.txt"')          # create file
+parse_and_run('`echo line two` >> "append_demo.txt"')         # append to same file
+parse_and_run('`cat` < "append_demo.txt"')                    # prints both lines
+parse_and_run('`echo tee output` tee "tee_demo.txt"')         # prints to terminal AND writes file
+parse_and_run('`cat` < "tee_demo.txt"')                       # verify file was written

@@ -10,8 +10,12 @@ BACKTICK_CMD: /`[^`]+`/
 // This tells the lexer to discard whitespace
 %ignore WS
 
-// Lowest precedence: if-then-else
-?expr: "if" expr "then" expr "else" expr -> ite
+?expr: assign_level ";" expr -> seq
+     | assign_level
+
+?assign_level: "if" expr "then" expr "else" assign_level -> ite
+     | ID ":=" assign_level -> assign
+     | "show" assign_level -> show
      | pipe_level
 
 // Shell pipe (left-associative, sits just above if-then-else).
@@ -46,9 +50,11 @@ BACKTICK_CMD: /`[^`]+`/
 // comparisons means e.g. `ls` > "out.txt" == `cat` > "out.txt" correctly
 // parses as Eq(RedirectOut(`ls`,...), RedirectOut(`cat`,...)).
 // RHS is always an ESCAPED_STRING, so "<" here never clashes with Lt above.
-?redir_level: redir_level "<"  ESCAPED_STRING -> redirect_in
-            | redir_level ">"  ESCAPED_STRING -> redirect_out
-            | redir_level "!>" ESCAPED_STRING -> redirect_err
+?redir_level: redir_level "<"   ESCAPED_STRING -> redirect_in
+            | redir_level ">"   ESCAPED_STRING -> redirect_out
+            | redir_level "!>"  ESCAPED_STRING -> redirect_err
+            | redir_level ">>"  ESCAPED_STRING -> redirect_append
+            | redir_level "tee" ESCAPED_STRING -> tee
             | add_level
 
 // Addition / subtraction (left-associative)
