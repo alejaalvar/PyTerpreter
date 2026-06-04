@@ -43,6 +43,7 @@ from interp import (
     Assign,
     Seq,
     Show,
+    Read,
 )
 
 parser = Lark(
@@ -104,6 +105,8 @@ class ToExpr(Transformer[Token, Expr]):
             return Lit(True)
         if name == "false":
             return Lit(False)
+        if name == "show":
+            return Read()
         return Name(name)
 
     def int(self, args: tuple) -> Expr:
