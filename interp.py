@@ -27,7 +27,7 @@ from typing import (
     TypeGuard,
 )
 
-type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App | Assign | Seq | Show | Read
+type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | RedirectAppend | Tee | Letfun | App | Assign | Seq | Show | Read
 type Value = int | bool | Proc | Closure
 
 
@@ -60,6 +60,24 @@ class Assign:
 
     def __str__(self):
         return f"({self.name} := {self.expr})"
+
+
+@dataclass
+class RedirectAppend:
+    proc: Expr
+    filename: str
+
+    def __str__(self) -> str:
+        return f"({self.proc} >> {self.filename})"
+
+
+@dataclass
+class Tee:
+    proc: Expr
+    filename: str
+
+    def __str__(self) -> str:
+        return f"({self.proc} tee {self.filename})"
 
 
 @dataclass
@@ -113,6 +131,8 @@ class Proc:
     stdin: str | None = None
     stdout: str | None = None
     stderr: str | None = None
+    stdout_append: str | None = None
+    tee: str | None = None
 
     def __str__(self) -> str:
         pipeline = " | ".join(f"{name} {' '.join(args)}" for name, args in self.stages)
@@ -121,6 +141,10 @@ class Proc:
             redirs += f" < {self.stdin}"
         if self.stdout:
             redirs += f" > {self.stdout}"
+        if self.stdout_append:
+            redirs += f" >> {self.stdout_append}"
+        if self.tee:
+            redirs += f" tee {self.tee}"
         if self.stderr:
             redirs += f" 2> {self.stderr}"
         return f"`{pipeline}{redirs}`"
@@ -469,7 +493,7 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
                 raise EvalError("cannot pipe: left side is not a process")
             if not isProc(rv):
                 raise EvalError("cannot pipe: right side is not a process")
-            if lv.stdout is not None:
+            if lv.stdout is not None or lv.stdout_append is not None or lv.tee is not None:
                 raise EvalError("cannot pipe: left side already has stdout redirected")
             if rv.stdin is not None:
                 raise EvalError("cannot pipe: right side already has stdin redirected")
@@ -501,7 +525,33 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
                 raise EvalError("cannot redirect: input is not a process")
             if pv.stdout is not None:
                 raise EvalError("cannot redirect stdout twice")
+            if pv.stdout_append is not None:
+                raise EvalError("cannot redirect stdout: already appending to a file")
+            if pv.tee is not None:
+                raise EvalError("cannot redirect stdout: already tee-ing to a file")
             return replace(pv, stdout=f)
+        case RedirectAppend(p, f):
+            pv = evalInEnv(env, p)
+            if not isProc(pv):
+                raise EvalError("cannot append redirect: input is not a process")
+            if pv.stdout is not None:
+                raise EvalError("cannot append redirect: stdout already redirected")
+            if pv.stdout_append is not None:
+                raise EvalError("cannot append redirect to two files")
+            if pv.tee is not None:
+                raise EvalError("cannot append redirect: already tee-ing to a file")
+            return replace(pv, stdout_append=f)
+        case Tee(p, f):
+            pv = evalInEnv(env, p)
+            if not isProc(pv):
+                raise EvalError("cannot tee: input is not a process")
+            if pv.stdout is not None:
+                raise EvalError("cannot tee: stdout already redirected")
+            if pv.stdout_append is not None:
+                raise EvalError("cannot tee: already appending to a file")
+            if pv.tee is not None:
+                raise EvalError("cannot tee to two files")
+            return replace(pv, tee=f)
         case Cmd(name, args):
             return Proc(stages=[(name, args)])
         case And(l, r):
@@ -633,13 +683,18 @@ def execProc(v: Proc) -> None:
         None
     """
     stdin_file = open(v.stdin, "r") if v.stdin else None
-    stdout_file = open(v.stdout, "w") if v.stdout else None
+    stdout_file = (
+        open(v.stdout, "w") if v.stdout else
+        open(v.stdout_append, "a") if v.stdout_append else
+        None
+    )
     stderr_file = open(v.stderr, "w") if v.stderr else None
+    stages = v.stages + [("tee", [v.tee])] if v.tee else v.stages
 
     try:
         procs = []
-        num_stages = len(v.stages)
-        for i, (name, args) in enumerate(v.stages):
+        num_stages = len(stages)
+        for i, (name, args) in enumerate(stages):
             is_first = i == 0
             is_last = i == num_stages - 1
 

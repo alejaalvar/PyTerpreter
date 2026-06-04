@@ -44,6 +44,8 @@ from interp import (
     Seq,
     Show,
     Read,
+    RedirectAppend,
+    Tee,
 )
 
 parser = Lark(
@@ -330,6 +332,12 @@ class ToExpr(Transformer[Token, Expr]):
         """
         return RedirectErr(args[0], str(args[1])[1:-1])
 
+    def redirect_append(self, args: tuple) -> Expr:
+        return RedirectAppend(args[0], str(args[1])[1:-1])
+
+    def tee(self, args: tuple) -> Expr:
+        return Tee(args[0], str(args[1])[1:-1])
+
 
 """
 'not', 'and', 'or' are Python keywords and cannot be used in def statements.
@@ -440,3 +448,10 @@ parse_and_run('`cat` < "spam_eggs.txt"')  # read and print file
 parse_and_run('`ls nonexistent_dir` !> "err.txt"')  # stderr to file
 parse_and_run("if 1 < 2 then `echo one is less` else `echo one is not less`")
 parse_and_run("let p = `echo bound name` in p end")
+
+# ── Shell DSL extension: append redirect and tee ──────────────────────────────
+parse_and_run('`echo line one` > "append_demo.txt"')          # create file
+parse_and_run('`echo line two` >> "append_demo.txt"')         # append to same file
+parse_and_run('`cat` < "append_demo.txt"')                    # prints both lines
+parse_and_run('`echo tee output` tee "tee_demo.txt"')         # prints to terminal AND writes file
+parse_and_run('`cat` < "tee_demo.txt"')                       # verify file was written

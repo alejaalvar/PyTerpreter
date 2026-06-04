@@ -50,9 +50,11 @@ BACKTICK_CMD: /`[^`]+`/
 // comparisons means e.g. `ls` > "out.txt" == `cat` > "out.txt" correctly
 // parses as Eq(RedirectOut(`ls`,...), RedirectOut(`cat`,...)).
 // RHS is always an ESCAPED_STRING, so "<" here never clashes with Lt above.
-?redir_level: redir_level "<"  ESCAPED_STRING -> redirect_in
-            | redir_level ">"  ESCAPED_STRING -> redirect_out
-            | redir_level "!>" ESCAPED_STRING -> redirect_err
+?redir_level: redir_level "<"   ESCAPED_STRING -> redirect_in
+            | redir_level ">"   ESCAPED_STRING -> redirect_out
+            | redir_level "!>"  ESCAPED_STRING -> redirect_err
+            | redir_level ">>"  ESCAPED_STRING -> redirect_append
+            | redir_level "tee" ESCAPED_STRING -> tee
             | add_level
 
 // Addition / subtraction (left-associative)
