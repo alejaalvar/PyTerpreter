@@ -17,6 +17,16 @@ as real shell pipelines via subprocess.
 import subprocess
 from dataclasses import dataclass, replace
 
+"""
+See Python docs for more specifics, but we import this because it helps the type checker
+perform some type narrowing. For example, in the evalInEnv function, there are branches
+that we want to assume the inferred type is a Proc, but PyLance cannot do this automatically,
+so we can use TypeGuards to help it perform type narrowing
+"""
+from typing import (
+    TypeGuard,
+)
+
 type Expr = Add | Sub | Mul | Div | Neg | Lit | Let | Name | Or | And | Not | Eq | Lt | If | Cmd | Pipe | RedirectIn | RedirectOut | RedirectErr | Letfun | App
 type Value = int | bool | Proc | Closure
 
@@ -74,9 +84,7 @@ class Proc:
     stderr: str | None = None
 
     def __str__(self) -> str:
-        pipeline = " | ".join(
-            f"{name} {' '.join(args)}" for name, args in self.stages
-        )
+        pipeline = " | ".join(f"{name} {' '.join(args)}" for name, args in self.stages)
         redirs = ""
         if self.stdin:
             redirs += f" < {self.stdin}"
@@ -219,7 +227,9 @@ class Letfun:
     inexpr: Expr
 
     def __str__(self) -> str:
-        return f"letfun {self.name}({self.param}) = {self.bodyexpr} in {self.inexpr} end"
+        return (
+            f"letfun {self.name}({self.param}) = {self.bodyexpr} in {self.inexpr} end"
+        )
 
 
 @dataclass
@@ -235,7 +245,7 @@ class App:
 class Closure:
     param: str
     body: Expr
-    env: "Env[Value]"
+    env: "Env[Loc[Value]]"
 
     def __str__(self) -> str:
         return f"<closure({self.param})>"
@@ -285,6 +295,22 @@ def lookupEnv[V](name: str, env: Env[V]) -> V | None:
             return None
 
 
+# model memory locations as (mutable) singleton lists
+type Loc[V] = list[V]  # always a singleton list
+
+
+def newLoc[V](value: V) -> Loc[V]:
+    return [value]
+
+
+def getLoc[V](loc: Loc[V]) -> V:
+    return loc[0]
+
+
+def setLoc[V](loc: Loc[V], value: V) -> None:
+    loc[0] = value
+
+
 class EvalError(Exception):
     pass
 
@@ -301,39 +327,41 @@ def eval(e: Expr) -> Value:
     return evalInEnv(emptyEnv, e)
 
 
-def isInt(v) -> bool:
-    """Return True if v is an integer and not a boolean. Required because
-    bool is a subtype of int in Python, so isinstance(True, int) is True.
+def isInt(v) -> TypeGuard[int]:
+    """
+    Check if the given value is an integer. Note that bool is a subtype of int
+    in Python, making an singular isinstance check alone insufficent
 
     Args:
         v: the value to check
 
     Returns:
-        bool: True if v is a plain integer
+        TypeGuard[int]: True if v is an integer
     """
     return isinstance(v, int) and not isinstance(v, bool)
 
 
-def isBool(v) -> bool:
-    """Return True if v is a boolean value.
+def isBool(v) -> TypeGuard[bool]:
+    """Check if the given value is a boolean
 
     Args:
         v: the value to check
 
     Returns:
-        bool: True if v is a bool
+        TypeGuard: True if v is a bool
     """
     return isinstance(v, bool)
 
 
-def isProc(v) -> bool:
-    """Return True if v is a Proc (shell process description).
+def isProc(v) -> TypeGuard[Proc]:
+    """
+    Check if the given value is a Proc type (shell process description)
 
     Args:
         v: the value to check
 
     Returns:
-        bool: True if v is a Proc
+        TypeGuard[Proc]: True if v is a Proc
     """
     return isinstance(v, Proc)
 
@@ -350,12 +378,12 @@ def procEq(lv, rv) -> bool:
     return lv == rv
 
 
-def evalInEnv(env: Env[Value], e: Expr) -> Value:
+def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
     """Evaluate an expression in the given environment by pattern-matching
     on the AST node type and recursively evaluating sub-expressions.
 
     Args:
-        env (Env[Value]): the current variable environment
+        env (Env[Loc[Value]]): the current variable environment
         e (Expr): the expression to evaluate
 
     Raises:
@@ -374,17 +402,11 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
             if not isProc(rv):
                 raise EvalError("cannot pipe: right side is not a process")
             if lv.stdout is not None:
-                raise EvalError(
-                    "cannot pipe: left side already has stdout redirected"
-                )
+                raise EvalError("cannot pipe: left side already has stdout redirected")
             if rv.stdin is not None:
-                raise EvalError(
-                    "cannot pipe: right side already has stdin redirected"
-                )
+                raise EvalError("cannot pipe: right side already has stdin redirected")
             if lv.stderr is not None and rv.stderr is not None:
-                raise EvalError(
-                    "cannot pipe: both sides have stderr redirected"
-                )
+                raise EvalError("cannot pipe: both sides have stderr redirected")
             return Proc(
                 stages=lv.stages + rv.stages,
                 stdin=lv.stdin,
@@ -489,13 +511,13 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
         case Lit(lit_val):
             return lit_val
         case Name(n):
-            v = lookupEnv(n, env)
-            if v is None:
+            loc = lookupEnv(n, env)
+            if loc is None:
                 raise EvalError(f"unbound name {n}")
-            return v
+            return getLoc(loc)
         case Let(n, d, b):
             v = evalInEnv(env, d)
-            newEnv = extendEnv(n, v, env)
+            newEnv = extendEnv(n, newLoc(v), env)
             return evalInEnv(newEnv, b)
         case If(cond, thenexpr, elseexpr):
             cv = evalInEnv(env, cond)
@@ -507,7 +529,10 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
                 return evalInEnv(env, elseexpr)
         case Letfun(n, p, b, i):
             c = Closure(p, b, env)
-            newEnv = extendEnv(n, c, env)
+            fun_loc: Loc[Value] = newLoc(
+                c
+            )  # we use the name `fun_loc` to avoid collisons & type errors - this is all one scope
+            newEnv = extendEnv(n, fun_loc, env)
             c.env = newEnv  # enable recursive calls
             return evalInEnv(newEnv, i)
         case App(f, a):
@@ -515,7 +540,7 @@ def evalInEnv(env: Env[Value], e: Expr) -> Value:
             av = evalInEnv(env, a)
             match fv:
                 case Closure(p, b, cenv):
-                    newEnv = extendEnv(p, av, cenv)
+                    newEnv = extendEnv(p, newLoc(av), cenv)
                     return evalInEnv(newEnv, b)
                 case _:
                     raise EvalError("application of non-function")
