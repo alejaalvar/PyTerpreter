@@ -40,6 +40,7 @@ from interp import (
     App,
     Expr,
     run,
+    Assign,
 )
 
 parser = Lark(
@@ -60,6 +61,12 @@ class AmbiguousParse(Exception):
 
 class ToExpr(Transformer[Token, Expr]):
     """Transform a Lark parse tree into an AST."""
+
+    def assign(self, args: tuple) -> Expr:
+        """
+        Handles an assignment
+        """
+        return Assign(str(args[0]), args[1])
 
     # ── ambiguity marker ──────────────────────────────────────────────────
     def _ambig(self, _):
@@ -319,15 +326,11 @@ setattr takes plain strings, so Lark's getattr(self, rule_name) will find them.
 this dynamically sets the attributes 'not,and,or' to corresponding
 lambda functions to get around the keyword issue
 """
-setattr(
-    ToExpr, "not", lambda _, args: Not(args[0])
-)  # returns a simple Not node
+setattr(ToExpr, "not", lambda _, args: Not(args[0]))  # returns a simple Not node
 setattr(
     ToExpr, "and", lambda _, args: And(args[0], args[1])
 )  # returns a simple And node
-setattr(
-    ToExpr, "or", lambda _, args: Or(args[0], args[1])
-)  # returns a simple Or node
+setattr(ToExpr, "or", lambda _, args: Or(args[0], args[1]))  # returns a simple Or node
 
 
 def parse(s: str) -> ParseTree:

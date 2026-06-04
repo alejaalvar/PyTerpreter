@@ -12,6 +12,7 @@ BACKTICK_CMD: /`[^`]+`/
 
 // Lowest precedence: if-then-else
 ?expr: "if" expr "then" expr "else" expr -> ite
+     | ID ":=" expr -> assign
      | pipe_level
 
 // Shell pipe (left-associative, sits just above if-then-else).

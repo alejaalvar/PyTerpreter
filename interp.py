@@ -415,10 +415,13 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
     match e:
         case Assign(n, e):
             name_loc = lookupEnv(n, env)
+            ev = evalInEnv(env, e)
             if name_loc is None:
                 raise EvalError(f"unbound name {n}")
             if isinstance(name_loc, FunLoc):
                 raise EvalError(f"cannot assign to a function name")
+            setLoc(name_loc, ev)
+            return ev
 
         case Pipe(l, r):
             lv = evalInEnv(env, l)
@@ -557,9 +560,13 @@ def evalInEnv(env: Env[Loc[Value]], e: Expr) -> Value:
                 return evalInEnv(env, elseexpr)
         case Letfun(n, p, b, i):
             c = Closure(p, b, env)
+            """
             fun_loc: Loc[Value] = newLoc(
                 c
             )  # we use the name `fun_loc` to avoid collisons & type errors - this is all one scope
+            """
+            # avoid collisions & type errors by using slightly different names for each loc variable - its all one scope
+            fun_loc: Loc[Value] = FunLoc([c])
             newEnv = extendEnv(n, fun_loc, env)
             c.env = newEnv  # enable recursive calls
             return evalInEnv(newEnv, i)
