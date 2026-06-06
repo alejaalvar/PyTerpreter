@@ -1,5 +1,7 @@
 # PyTerpreter — Shell DSL Expression Language
 
+**Welcome to Shel** — a *shell* + *expressions* language.
+
 A Python-based interpreter for a functional expression language with a built-in
 Shell DSL extension. Programs are written as expressions that evaluate to a value:
 an integer, a boolean, a function closure, or a shell process description that
