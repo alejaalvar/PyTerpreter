@@ -14,6 +14,9 @@ gets executed when the program runs.
 | `interp.py` | AST node definitions and evaluator |
 | `expr.lark` | Lark grammar defining the concrete syntax |
 | `parse_run.py` | Parser, transformer, and interactive REPL |
+| `test_phase1_core.py` | 77 unit tests for core language features |
+| `interp_test.py` | Unit tests for `RedirectAppend` and `Tee` operators |
+| `test3.py` | Parser tests for Milestone 3 validation |
 
 ---
 
@@ -44,9 +47,14 @@ Dependencies (from `requirements.txt`):
 
 ## Running
 
-**Run the test suite:**
+**Run the inline parse/eval demos:**
 ```bash
 python3 parse_run.py
+```
+
+**Run the unit test suite:**
+```bash
+python3 -m unittest test_phase1_core interp_test
 ```
 
 **Launch the interactive REPL:**
@@ -130,6 +138,41 @@ result: 25
 result: 720
 ```
 
+### Mutable Variables
+
+Variables are mutable. Use `:=` to assign a new value to a bound variable, and `;`
+to sequence expressions (evaluate left, discard, return right).
+
+```
+> let x = 0 in x := 5 ; x end
+result: 5
+
+> let x = 1 in x := x + 1 ; x end
+result: 2
+
+> let x = 0 in x := 1 ; x := x + 1 ; x end
+result: 2
+```
+
+### Show and Read
+
+`show e` evaluates `e`, prints the result, then returns it. `read` prompts the user
+for an integer and returns it.
+
+```
+> show 42
+42
+result: 42
+
+> show (1 + 2)
+3
+result: 3
+
+> let x = read in x + 1 end
+(user types: 10)
+result: 11
+```
+
 ### Shell Commands
 
 Shell command literals are written between backticks. They evaluate to a process
@@ -154,6 +197,9 @@ hello world
 hello
 
 > `ls nonexistent` !> "err.txt"  -- redirect stderr to a file
+
+> `echo world` >> "out.txt"      -- append stdout to a file
+> `ls` tee "listing.txt"         -- write to file AND print to stdout
 ```
 
 ### Combining Core Language with Shell DSL
@@ -187,8 +233,14 @@ hello
 | Let binding | `let x = e in e end` | `let x = 5 in x + 1 end` |
 | Function def | `letfun f(x) = e in e end` | `letfun f(x) = x * 2 in f(3) end` |
 | Function call | `f(e)` | `f(42)` |
+| Assignment | `x := e` | `x := x + 1` |
+| Sequence | `e ; e` | `x := 1 ; x + 2` |
+| Show | `show e` | `show (x + 1)` |
+| Read | `read` | `let x = read in x end` |
 | Shell command | `` `cmd args` `` | `` `ls -la` `` |
 | Pipe | `e \| e` | `` `ls` \| `wc -l` `` |
 | Stdin redirect | `e < "file"` | `` `cat` < "input.txt"`` |
 | Stdout redirect | `e > "file"` | `` `echo hi` > "out.txt"`` |
 | Stderr redirect | `e !> "file"` | `` `ls x` !> "err.txt"`` |
+| Append redirect | `e >> "file"` | `` `echo hi` >> "log.txt"`` |
+| Tee | `e tee "file"` | `` `ls` tee "out.txt"`` |
